@@ -9,8 +9,10 @@ namespace Yade.MainMenu
 {
     public class MainMenuController : MonoBehaviour
     {
+        private const string StorySceneName = "StoryScene";
+
         [Header("Navigation")]
-        [SerializeField] private string sceneToLoad = "SampleScene";
+        [SerializeField] private string sceneToLoad = StorySceneName;
         [SerializeField] private Button newJourneyButton;
         [SerializeField] private Button continueButton;
         [SerializeField] private Button galleryButton;

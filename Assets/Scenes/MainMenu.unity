@@ -3556,7 +3556,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9db17b9302f59427b91069a600d8cd33, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Yade.MainMenu.MainMenuController
-  sceneToLoad: SampleScene
+  sceneToLoad: StoryScene
   newJourneyButton: {fileID: 305031580}
   continueButton: {fileID: 639067121}
   galleryButton: {fileID: 74292174}
