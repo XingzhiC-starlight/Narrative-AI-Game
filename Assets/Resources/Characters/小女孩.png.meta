@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: f988fcae42b344342810730721cff453
+guid: 7cba1b4d8a4e948039d4f8e19c593a7a
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -3626817711403266710
-    second: kfc.chitken_A_full_body_character_design_of_an_11-year-old_cute_8da00661-59dd-4ab0-b5a9-590b7084c529_0
+      213: 4742691065699102493
+    second: "\u5C0F\u5973\u5B69(Eric\u7248)_0"
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,13 +126,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: kfc.chitken_A_full_body_character_design_of_an_11-year-old_cute_8da00661-59dd-4ab0-b5a9-590b7084c529_0
+      name: "\u5C0F\u5973\u5B69(Eric\u7248)_0"
       rect:
         serializedVersion: 2
-        x: 35
-        y: 0
-        width: 1773
-        height: 2464
+        x: 234
+        y: 600
+        width: 788
+        height: 1467
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -141,8 +141,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: a6d86b6d184faadc0800000000000000
-      internalID: -3626817711403266710
+      spriteID: d1fe96a756c61d140800000000000000
+      internalID: 4742691065699102493
       vertices: []
       indices: 
       edges: []
@@ -161,7 +161,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      kfc.chitken_A_full_body_character_design_of_an_11-year-old_cute_8da00661-59dd-4ab0-b5a9-590b7084c529_0: -3626817711403266710
+      "\u5C0F\u5973\u5B69(Eric\u7248)_0": 4742691065699102493
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

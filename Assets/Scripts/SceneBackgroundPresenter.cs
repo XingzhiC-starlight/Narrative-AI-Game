@@ -29,6 +29,7 @@ public class SceneBackgroundPresenter : MonoBehaviour
     private CanvasGroup transitionVideoCanvasGroup;
     private RenderTexture runtimeTransitionVideoTexture;
     private int backgroundChangeVersion;
+    private int backgroundLayerBaseIndex = -1;
 
     private void Awake()
     {
@@ -51,6 +52,9 @@ public class SceneBackgroundPresenter : MonoBehaviour
             backgroundVideoImage.gameObject.SetActive(false);
             EnsureTransitionVideoBackground();
         }
+
+        CacheBackgroundLayerBaseIndex();
+        MaintainBackgroundLayerOrder();
     }
 
     private void OnEnable()
@@ -125,6 +129,7 @@ public class SceneBackgroundPresenter : MonoBehaviour
         transitionCanvasGroup = EnsureCanvasGroup(transitionImage);
         backgroundVideoCanvasGroup = backgroundVideoImage != null ? EnsureCanvasGroup(backgroundVideoImage) : null;
         EnsureTransitionVideoBackground();
+        MaintainBackgroundLayerOrder();
 
         if (string.Equals(normalizedName, "none", StringComparison.OrdinalIgnoreCase))
         {
@@ -289,7 +294,7 @@ public class SceneBackgroundPresenter : MonoBehaviour
     {
         transitionVideoImage.texture = transitionVideoTexture;
         transitionVideoImage.gameObject.SetActive(true);
-        transitionVideoImage.transform.SetSiblingIndex(backgroundVideoImage.transform.GetSiblingIndex() + 1);
+        MaintainBackgroundLayerOrder();
         transitionVideoCanvasGroup.alpha = 0f;
 
         ConfigureVideoPlayer(transitionVideoPlayer, videoClip, transitionVideoTexture);
@@ -418,7 +423,6 @@ public class SceneBackgroundPresenter : MonoBehaviour
             }
 
             CopyRectTransform(backgroundVideoImage.rectTransform, transitionVideoImage.rectTransform);
-            transitionVideoImage.transform.SetSiblingIndex(backgroundVideoImage.transform.GetSiblingIndex() + 1);
             transitionVideoImage.color = backgroundVideoImage.color;
             transitionVideoImage.material = backgroundVideoImage.material;
             transitionVideoImage.raycastTarget = false;
@@ -439,6 +443,7 @@ public class SceneBackgroundPresenter : MonoBehaviour
         transitionVideoCanvasGroup.alpha = 0f;
         transitionVideoImage.texture = transitionVideoTexture;
         transitionVideoImage.gameObject.SetActive(false);
+        MaintainBackgroundLayerOrder();
         return true;
     }
 
@@ -475,6 +480,70 @@ public class SceneBackgroundPresenter : MonoBehaviour
         (backgroundVideoPlayer, transitionVideoPlayer) = (transitionVideoPlayer, backgroundVideoPlayer);
         (backgroundVideoTexture, transitionVideoTexture) = (transitionVideoTexture, backgroundVideoTexture);
         (backgroundVideoCanvasGroup, transitionVideoCanvasGroup) = (transitionVideoCanvasGroup, backgroundVideoCanvasGroup);
+        MaintainBackgroundLayerOrder();
+    }
+
+    private void CacheBackgroundLayerBaseIndex()
+    {
+        if (backgroundLayerBaseIndex >= 0)
+        {
+            return;
+        }
+
+        backgroundLayerBaseIndex = int.MaxValue;
+
+        if (backgroundImage != null)
+        {
+            backgroundLayerBaseIndex = Mathf.Min(backgroundLayerBaseIndex, backgroundImage.transform.GetSiblingIndex());
+        }
+
+        if (backgroundVideoImage != null)
+        {
+            backgroundLayerBaseIndex = Mathf.Min(backgroundLayerBaseIndex, backgroundVideoImage.transform.GetSiblingIndex());
+        }
+
+        if (backgroundLayerBaseIndex == int.MaxValue)
+        {
+            backgroundLayerBaseIndex = 0;
+        }
+    }
+
+    private void MaintainBackgroundLayerOrder()
+    {
+        CacheBackgroundLayerBaseIndex();
+
+        Transform parent = backgroundImage != null
+            ? backgroundImage.transform.parent
+            : backgroundVideoImage != null
+                ? backgroundVideoImage.transform.parent
+                : null;
+
+        if (parent == null)
+        {
+            return;
+        }
+
+        int siblingIndex = backgroundLayerBaseIndex;
+
+        if (backgroundImage != null && backgroundImage.transform.parent == parent)
+        {
+            backgroundImage.transform.SetSiblingIndex(siblingIndex++);
+        }
+
+        if (backgroundVideoImage != null && backgroundVideoImage.transform.parent == parent)
+        {
+            backgroundVideoImage.transform.SetSiblingIndex(siblingIndex++);
+        }
+
+        if (transitionImage != null && transitionImage.transform.parent == parent)
+        {
+            transitionImage.transform.SetSiblingIndex(siblingIndex++);
+        }
+
+        if (transitionVideoImage != null && transitionVideoImage.transform.parent == parent)
+        {
+            transitionVideoImage.transform.SetSiblingIndex(siblingIndex);
+        }
     }
 
     private void HideSpriteBackground()
@@ -558,7 +627,6 @@ public class SceneBackgroundPresenter : MonoBehaviour
         var transitionObject = new GameObject(transitionName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         var transitionTransform = transitionObject.GetComponent<RectTransform>();
         transitionTransform.SetParent(parent, false);
-        transitionTransform.SetSiblingIndex(sourceImage.transform.GetSiblingIndex() + 1);
 
         CopyRectTransform(sourceImage.rectTransform, transitionTransform);
 

@@ -3,6 +3,8 @@ position: -600,-200
 ---
 <<portrait none>>
 <<background 雪山山谷>>
+<<portrait_scale_default 小女孩 0.8>>
+<<portrait_scale_default 骑士 1.2>>
 <<declare $scene2_choice1 = "">>
 <<declare $scene4_choice2 = "">>
 <<declare $scene4_choice3 = "">>

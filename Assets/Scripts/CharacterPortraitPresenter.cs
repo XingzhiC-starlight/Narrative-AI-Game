@@ -1,14 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 using Yarn.Unity;
 
 [Serializable]
-public struct SpeakerPortraitBinding
+public struct PortraitSlotBinding
 {
-    public string speakerName;
     public Image portraitImage;
 }
 
@@ -16,7 +17,7 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 {
     private const string PortraitResourcesPath = "Characters/";
     private const int MaxVisiblePortraits = 2;
-    private const float KnightPortraitScale = 1.2f;
+    private const float DefaultPortraitScale = 1f;
 
     private struct PortraitLayoutState
     {
@@ -29,20 +30,22 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 
     [SerializeField] private DialogueRunner dialogueRunner;
     [SerializeField] private GameObject portraitContainer;
-    [SerializeField] private List<SpeakerPortraitBinding> portraits = new List<SpeakerPortraitBinding>();
+    [FormerlySerializedAs("portraits")]
+    [SerializeField] private List<PortraitSlotBinding> portraitSlots = new List<PortraitSlotBinding>();
     [SerializeField] private Color highlightColor = Color.white;
     [SerializeField] private Color dimColor = new Color(0.45f, 0.45f, 0.45f, 1f);
     [SerializeField] private float fadeDuration = 0.25f;
-    [SerializeField] private bool showOnDialogueStart = true;
     [SerializeField] private bool hideOnDialogueComplete = true;
 
     private readonly Dictionary<Image, CanvasGroup> canvasGroups = new Dictionary<Image, CanvasGroup>();
     private readonly Dictionary<Image, PortraitLayoutState> initialLayout = new Dictionary<Image, PortraitLayoutState>();
+    private readonly Dictionary<string, float> defaultScalesByPortrait = new Dictionary<string, float>(StringComparer.Ordinal);
     private readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
     private readonly List<string> currentPortraitNames = new List<string>(MaxVisiblePortraits);
+    private readonly List<float> slotScales = new List<float>(MaxVisiblePortraits);
 
     private string lastKnownSpeakerName;
-    private bool portraitCommandRegistered;
+    private bool portraitCommandsRegistered;
 
     private void Awake()
     {
@@ -68,23 +71,8 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
     {
         RebuildSlots();
         currentPortraitNames.Clear();
+        ResetSlotScales();
         lastKnownSpeakerName = null;
-
-        if (showOnDialogueStart)
-        {
-            foreach (var binding in portraits)
-            {
-                if (currentPortraitNames.Count >= MaxVisiblePortraits)
-                {
-                    break;
-                }
-
-                if (!string.IsNullOrWhiteSpace(binding.speakerName))
-                {
-                    currentPortraitNames.Add(binding.speakerName.Trim());
-                }
-            }
-        }
 
         await ApplyDisplayStateAsync();
         SetLineHighlight(null);
@@ -114,7 +102,7 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 
     private void RegisterPortraitCommand()
     {
-        if (portraitCommandRegistered)
+        if (portraitCommandsRegistered)
         {
             return;
         }
@@ -130,18 +118,22 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
         }
 
         dialogueRunner.AddCommandHandler<string[]>("portrait", SetPortraitCommandAsync);
-        portraitCommandRegistered = true;
+        dialogueRunner.AddCommandHandler<string[]>("portrait_scale", SetPortraitScaleCommandAsync);
+        dialogueRunner.AddCommandHandler<string[]>("portrait_scale_default", SetPortraitDefaultScaleCommandAsync);
+        portraitCommandsRegistered = true;
     }
 
     private void UnregisterPortraitCommand()
     {
-        if (!portraitCommandRegistered || dialogueRunner == null)
+        if (!portraitCommandsRegistered || dialogueRunner == null)
         {
             return;
         }
 
         dialogueRunner.RemoveCommandHandler("portrait");
-        portraitCommandRegistered = false;
+        dialogueRunner.RemoveCommandHandler("portrait_scale");
+        dialogueRunner.RemoveCommandHandler("portrait_scale_default");
+        portraitCommandsRegistered = false;
     }
 
     private async YarnTask SetPortraitCommandAsync(params string[] speakerNames)
@@ -182,6 +174,7 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
             }
 
             currentPortraitNames.Clear();
+            ResetSlotScales();
             await ApplyDisplayStateAsync();
             SetLineHighlight(lastKnownSpeakerName);
             return;
@@ -198,17 +191,88 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 
         currentPortraitNames.Clear();
         currentPortraitNames.AddRange(requestedNames);
+        ResetSlotScales();
+        ApplyDefaultScalesToCurrentPortraits();
 
         await ApplyDisplayStateAsync();
         SetLineHighlight(lastKnownSpeakerName);
+    }
+
+    private async YarnTask SetPortraitScaleCommandAsync(params string[] parameters)
+    {
+        if (parameters == null || parameters.Length < 2)
+        {
+            Debug.LogWarning("Command <<portrait_scale>> requires a slot name and a scale, for example <<portrait_scale right 1.2>>.");
+            return;
+        }
+
+        if (!TryParseScale(parameters[1], out float scale))
+        {
+            Debug.LogWarning($"Command <<portrait_scale>> could not parse scale value \"{parameters[1]}\".");
+            return;
+        }
+
+        if (IsAllSlotsAlias(parameters[0]))
+        {
+            for (int i = 0; i < slotScales.Count; i++)
+            {
+                slotScales[i] = scale;
+            }
+        }
+        else if (TryGetSlotIndex(parameters[0], out int slotIndex))
+        {
+            EnsureSlotScaleCapacity();
+            if (slotIndex >= slotScales.Count)
+            {
+                Debug.LogWarning($"Command <<portrait_scale>> refers to slot \"{parameters[0]}\", but only {slotScales.Count} portrait slot(s) are configured.");
+                return;
+            }
+
+            slotScales[slotIndex] = scale;
+        }
+        else
+        {
+            Debug.LogWarning($"Command <<portrait_scale>> does not recognize slot \"{parameters[0]}\". Use left, right, both, 1, or 2.");
+            return;
+        }
+
+        await ApplyDisplayStateAsync();
+        SetLineHighlight(lastKnownSpeakerName);
+    }
+
+    private YarnTask SetPortraitDefaultScaleCommandAsync(params string[] parameters)
+    {
+        if (parameters == null || parameters.Length < 2)
+        {
+            Debug.LogWarning("Command <<portrait_scale_default>> requires a portrait name and a scale, for example <<portrait_scale_default 骑士 1.2>>.");
+            return YarnTask.CompletedTask;
+        }
+
+        string portraitName = parameters[0]?.Trim();
+        if (string.IsNullOrWhiteSpace(portraitName))
+        {
+            Debug.LogWarning("Command <<portrait_scale_default>> requires a non-empty portrait name.");
+            return YarnTask.CompletedTask;
+        }
+
+        if (!TryParseScale(parameters[1], out float scale))
+        {
+            Debug.LogWarning($"Command <<portrait_scale_default>> could not parse scale value \"{parameters[1]}\".");
+            return YarnTask.CompletedTask;
+        }
+
+        defaultScalesByPortrait[portraitName] = scale;
+        ApplyDefaultScalesToCurrentPortraits();
+        return YarnTask.CompletedTask;
     }
 
     private void RebuildSlots()
     {
         canvasGroups.Clear();
         initialLayout.Clear();
+        EnsureSlotScaleCapacity();
 
-        foreach (var binding in portraits)
+        foreach (var binding in portraitSlots)
         {
             if (binding.portraitImage == null)
             {
@@ -231,9 +295,9 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 
         if (showContainer)
         {
-            for (int i = 0; i < portraits.Count; i++)
+            for (int i = 0; i < portraitSlots.Count; i++)
             {
-                Image image = portraits[i].portraitImage;
+                Image image = portraitSlots[i].portraitImage;
                 if (image == null)
                 {
                     continue;
@@ -242,16 +306,16 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
                 RestoreLayout(image.rectTransform);
             }
 
-            if (currentPortraitNames.Count == 1 && portraits.Count > 0 && portraits[0].portraitImage != null)
+            if (currentPortraitNames.Count == 1 && portraitSlots.Count > 0 && portraitSlots[0].portraitImage != null)
             {
-                ApplyCenteredLayout(portraits[0].portraitImage.rectTransform);
+                ApplyCenteredLayout(portraitSlots[0].portraitImage.rectTransform);
             }
         }
 
         var fadeTasks = new List<YarnTask>();
-        for (int i = 0; i < portraits.Count; i++)
+        for (int i = 0; i < portraitSlots.Count; i++)
         {
-            Image image = portraits[i].portraitImage;
+            Image image = portraitSlots[i].portraitImage;
             if (image == null)
             {
                 continue;
@@ -261,7 +325,7 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
             if (shouldShow)
             {
                 image.sprite = LoadPortraitSprite(currentPortraitNames[i]);
-                ApplyPortraitScale(image.rectTransform, currentPortraitNames[i]);
+                ApplyPortraitScale(image.rectTransform, i);
             }
 
             fadeTasks.Add(FadePortraitVisibilityAsync(image, shouldShow));
@@ -279,9 +343,9 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 
         if (!showContainer)
         {
-            for (int i = 0; i < portraits.Count; i++)
+            for (int i = 0; i < portraitSlots.Count; i++)
             {
-                Image image = portraits[i].portraitImage;
+                Image image = portraitSlots[i].portraitImage;
                 if (image == null)
                 {
                     continue;
@@ -296,9 +360,9 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
     {
         bool hasSpeaker = !string.IsNullOrWhiteSpace(speakerName);
 
-        for (int i = 0; i < portraits.Count; i++)
+        for (int i = 0; i < portraitSlots.Count; i++)
         {
-            Image image = portraits[i].portraitImage;
+            Image image = portraitSlots[i].portraitImage;
             if (image == null || i >= currentPortraitNames.Count)
             {
                 continue;
@@ -449,10 +513,114 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
         }
     }
 
-    private static void ApplyPortraitScale(RectTransform rectTransform, string portraitName)
+    private void ApplyPortraitScale(RectTransform rectTransform, int slotIndex)
     {
-        float scale = string.Equals(portraitName, "骑士", StringComparison.Ordinal) ? KnightPortraitScale : 1f;
-        rectTransform.localScale = new Vector3(scale, scale, 1f);
+        float scale = GetSlotScale(slotIndex);
+
+        rectTransform.localScale = new Vector3(
+            rectTransform.localScale.x * scale,
+            rectTransform.localScale.y * scale,
+            rectTransform.localScale.z);
+    }
+
+    private void EnsureSlotScaleCapacity()
+    {
+        while (slotScales.Count < portraitSlots.Count)
+        {
+            slotScales.Add(DefaultPortraitScale);
+        }
+
+        while (slotScales.Count > portraitSlots.Count)
+        {
+            slotScales.RemoveAt(slotScales.Count - 1);
+        }
+    }
+
+    private void ResetSlotScales()
+    {
+        EnsureSlotScaleCapacity();
+        for (int i = 0; i < slotScales.Count; i++)
+        {
+            slotScales[i] = DefaultPortraitScale;
+        }
+    }
+
+    private void ApplyDefaultScalesToCurrentPortraits()
+    {
+        EnsureSlotScaleCapacity();
+        for (int i = 0; i < currentPortraitNames.Count && i < slotScales.Count; i++)
+        {
+            string portraitName = currentPortraitNames[i];
+            if (!string.IsNullOrWhiteSpace(portraitName) && defaultScalesByPortrait.TryGetValue(portraitName, out float scale) && scale > 0f)
+            {
+                slotScales[i] = scale;
+            }
+        }
+    }
+
+    private float GetSlotScale(int slotIndex)
+    {
+        if (slotIndex < 0 || slotIndex >= slotScales.Count)
+        {
+            return DefaultPortraitScale;
+        }
+
+        float scale = slotScales[slotIndex];
+        return scale > 0f ? scale : DefaultPortraitScale;
+    }
+
+    private static bool TryParseScale(string scaleText, out float scale)
+    {
+        if (float.TryParse(scaleText, NumberStyles.Float, CultureInfo.InvariantCulture, out scale) && scale > 0f)
+        {
+            return true;
+        }
+
+        scale = DefaultPortraitScale;
+        return false;
+    }
+
+    private static bool TryGetSlotIndex(string slotText, out int slotIndex)
+    {
+        slotIndex = -1;
+        if (string.IsNullOrWhiteSpace(slotText))
+        {
+            return false;
+        }
+
+        switch (slotText.Trim().ToLowerInvariant())
+        {
+            case "left":
+            case "l":
+            case "1":
+            case "center":
+                slotIndex = 0;
+                return true;
+            case "right":
+            case "r":
+            case "2":
+                slotIndex = 1;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsAllSlotsAlias(string slotText)
+    {
+        if (string.IsNullOrWhiteSpace(slotText))
+        {
+            return false;
+        }
+
+        switch (slotText.Trim().ToLowerInvariant())
+        {
+            case "both":
+            case "all":
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static void ApplyCenteredLayout(RectTransform rectTransform)
