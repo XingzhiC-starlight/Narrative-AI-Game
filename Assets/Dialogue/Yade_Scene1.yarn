@@ -11,6 +11,7 @@ position: -600,-200
 <<declare $scene4_choice4 = "">>
 <<declare $scene5_choice1 = "">>
 <<bgm play 温暖的伊丽斯 0.5 1>>
+<<chat_wait>>
 <<jump prologue_1>>
 ===
 
@@ -176,7 +177,6 @@ title: bridge_chat_001
 position: 4050,-420
 ---
 <<portrait none>>
-<<chat_wait>>
 <<portrait 亚德 小女孩>>
 <<jump scene2_1>>
 ===

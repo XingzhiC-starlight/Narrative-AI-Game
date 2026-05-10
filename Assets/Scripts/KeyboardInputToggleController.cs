@@ -17,6 +17,8 @@ public class KeyboardInputToggleController : MonoBehaviour
     [Header("Behavior")]
     [SerializeField] private bool placeInputAtTalkButtonOnAwake = true;
     [SerializeField] private bool clearTextWhenOpened = false;
+    [SerializeField] private bool hideInputOnAwake = false;
+    [SerializeField] private bool focusInputOnAwake = true;
 
     [Header("Visual")]
     [SerializeField] private Color inputTextColor = Color.black;
@@ -72,7 +74,12 @@ public class KeyboardInputToggleController : MonoBehaviour
 
         if (keyboardInputField != null)
         {
-            keyboardInputField.gameObject.SetActive(false);
+            keyboardInputField.gameObject.SetActive(!hideInputOnAwake);
+            if (!hideInputOnAwake && focusInputOnAwake)
+            {
+                keyboardInputField.Select();
+                keyboardInputField.ActivateInputField();
+            }
         }
 
         sessionId = GetOrCreateSessionId();
@@ -171,6 +178,11 @@ public class KeyboardInputToggleController : MonoBehaviour
     {
         isSendingRequest = true;
 
+        if (keyboardInputField != null)
+        {
+            keyboardInputField.interactable = false;
+        }
+
         var payload = new ChatRequestPayload
         {
             session_id = sessionId,
@@ -215,6 +227,7 @@ public class KeyboardInputToggleController : MonoBehaviour
 
         if (keyboardInputField != null)
         {
+            keyboardInputField.interactable = true;
             keyboardInputField.SetTextWithoutNotify(string.Empty);
             keyboardInputField.Select();
             keyboardInputField.ActivateInputField();
