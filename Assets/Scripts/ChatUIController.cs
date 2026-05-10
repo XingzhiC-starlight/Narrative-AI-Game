@@ -11,11 +11,13 @@ public class ChatUIController : MonoBehaviour
     [SerializeField] private Button continueButton;
     [SerializeField] private CanvasGroup chatCanvasGroup;
     [SerializeField] private float fadeDuration = 0.25f;
+    [SerializeField] private bool hideOnAwake = true;
 
     private bool commandRegistered;
     private YarnTaskCompletionSource waitForContinueSource;
     private bool isWaitingForContinue;
     private bool isTransitioning;
+    private GameObject chatCanvasRoot;
 
     private void Awake()
     {
@@ -30,6 +32,20 @@ public class ChatUIController : MonoBehaviour
             if (chatCanvasGroup == null)
             {
                 chatCanvasGroup = chatUIRoot.AddComponent<CanvasGroup>();
+            }
+        }
+
+        if (chatUIRoot != null)
+        {
+            Canvas parentCanvas = chatUIRoot.GetComponentInParent<Canvas>(true);
+            if (parentCanvas != null && parentCanvas.gameObject != chatUIRoot)
+            {
+                chatCanvasRoot = parentCanvas.gameObject;
+            }
+
+            if (hideOnAwake)
+            {
+                chatUIRoot.SetActive(false);
             }
         }
     }
@@ -156,6 +172,7 @@ public class ChatUIController : MonoBehaviour
         }
 
         chatUIRoot?.SetActive(false);
+        SetChatCanvasRootActive(false);
         isWaitingForContinue = false;
         waitForContinueSource?.TrySetCanceled();
         waitForContinueSource = null;
@@ -164,6 +181,7 @@ public class ChatUIController : MonoBehaviour
 
     private async YarnTask ShowChatUIAsync()
     {
+        SetChatCanvasRootActive(true);
         chatUIRoot.SetActive(true);
 
         if (chatCanvasGroup == null || fadeDuration <= 0f)
@@ -188,5 +206,14 @@ public class ChatUIController : MonoBehaviour
         }
 
         chatUIRoot.SetActive(false);
+        SetChatCanvasRootActive(false);
+    }
+
+    private void SetChatCanvasRootActive(bool active)
+    {
+        if (chatCanvasRoot != null)
+        {
+            chatCanvasRoot.SetActive(active);
+        }
     }
 }
