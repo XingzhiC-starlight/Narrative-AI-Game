@@ -1117,7 +1117,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6b6fa84187084c5db13e7618a4e59283, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChatHistoryController
-  maxHistoryCount: 6
+  maxHistoryCount: 10
   userBoxSprite: {fileID: -3714256910232736653, guid: d01d10e64408049d4b1322c205fb0744, type: 3}
   characterBoxSprite: {fileID: 5182854045948382273, guid: d65860c6c8773402d831976ab74ba8ed, type: 3}
   historyBoxSize: {x: 360, y: 72}
