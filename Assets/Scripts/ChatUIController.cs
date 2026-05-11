@@ -9,6 +9,7 @@ public class ChatUIController : MonoBehaviour
     [SerializeField] private DialogueRunner dialogueRunner;
     [SerializeField] private GameObject chatUIRoot;
     [SerializeField] private Button continueButton;
+    [SerializeField] private KeyboardInputToggleController chatInputController;
     [SerializeField] private CanvasGroup chatCanvasGroup;
     [SerializeField] private float fadeDuration = 0.25f;
     [SerializeField] private bool hideOnAwake = true;
@@ -37,6 +38,11 @@ public class ChatUIController : MonoBehaviour
 
         if (chatUIRoot != null)
         {
+            if (chatInputController == null)
+            {
+                chatInputController = chatUIRoot.GetComponent<KeyboardInputToggleController>();
+            }
+
             Canvas parentCanvas = chatUIRoot.GetComponentInParent<Canvas>(true);
             if (parentCanvas != null && parentCanvas.gameObject != chatUIRoot)
             {
@@ -130,7 +136,14 @@ public class ChatUIController : MonoBehaviour
 
         await ShowChatUIAsync();
         continueButton.interactable = true;
-        continueButton.Select();
+        if (chatInputController != null)
+        {
+            chatInputController.FocusInputField();
+        }
+        else
+        {
+            continueButton.Select();
+        }
         isTransitioning = false;
 
         await waitForContinueSource.Task;

@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Text;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 
@@ -37,6 +38,8 @@ public class KeyboardInputToggleController : MonoBehaviour
     [SerializeField] private float minReplyBubbleHeight = 120f;
     [SerializeField] private float replyBubbleVerticalPadding = 60f;
     [SerializeField] private float bubbleFadeDuration = 0.2f;
+    [SerializeField] private bool useReplyTypewriter = true;
+    [SerializeField] private float replyTypewriterCharactersPerSecond = 45f;
 
     private int lastSubmitFrame = -1;
     private bool isSendingRequest;
@@ -46,6 +49,7 @@ public class KeyboardInputToggleController : MonoBehaviour
     private RectTransform replyTextRect;
     private CanvasGroup replyBubbleCanvasGroup;
     private Coroutine replyBubbleFadeCoroutine;
+    private Coroutine replyTypewriterCoroutine;
 
     [Serializable]
     private class ChatRequestPayload
@@ -75,8 +79,7 @@ public class KeyboardInputToggleController : MonoBehaviour
             keyboardInputField.gameObject.SetActive(!hideInputOnAwake);
             if (!hideInputOnAwake && focusInputOnAwake)
             {
-                keyboardInputField.Select();
-                keyboardInputField.ActivateInputField();
+                FocusInputField();
             }
         }
 
@@ -132,6 +135,27 @@ public class KeyboardInputToggleController : MonoBehaviour
         if (clearTextWhenOpened)
         {
             keyboardInputField.text = string.Empty;
+        }
+
+        keyboardInputField.Select();
+        keyboardInputField.ActivateInputField();
+    }
+
+    public void FocusInputField()
+    {
+        if (keyboardInputField == null || !keyboardInputField.gameObject.activeInHierarchy)
+        {
+            return;
+        }
+
+        if (!keyboardInputField.interactable)
+        {
+            return;
+        }
+
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(keyboardInputField.gameObject);
         }
 
         keyboardInputField.Select();
@@ -227,8 +251,7 @@ public class KeyboardInputToggleController : MonoBehaviour
         {
             keyboardInputField.interactable = true;
             keyboardInputField.SetTextWithoutNotify(string.Empty);
-            keyboardInputField.Select();
-            keyboardInputField.ActivateInputField();
+            FocusInputField();
         }
         isSendingRequest = false;
     }
@@ -290,8 +313,41 @@ public class KeyboardInputToggleController : MonoBehaviour
         }
 
         replyText.text = reply.Trim();
+        replyText.maxVisibleCharacters = int.MaxValue;
         ResizeReplyBubbleToText();
         SetReplyBubbleVisible(true, true);
+
+        if (useReplyTypewriter && replyTypewriterCharactersPerSecond > 0f)
+        {
+            if (replyTypewriterCoroutine != null)
+            {
+                StopCoroutine(replyTypewriterCoroutine);
+            }
+
+            replyTypewriterCoroutine = StartCoroutine(TypeReplyCoroutine());
+        }
+    }
+
+    private IEnumerator TypeReplyCoroutine()
+    {
+        replyText.ForceMeshUpdate();
+        int visibleCharacterCount = replyText.textInfo.characterCount;
+        replyText.maxVisibleCharacters = 0;
+
+        float visibleCharacters = 0f;
+        while (replyText != null && replyText.maxVisibleCharacters < visibleCharacterCount)
+        {
+            visibleCharacters += replyTypewriterCharactersPerSecond * Time.deltaTime;
+            replyText.maxVisibleCharacters = Mathf.Min(visibleCharacterCount, Mathf.FloorToInt(visibleCharacters));
+            yield return null;
+        }
+
+        if (replyText != null)
+        {
+            replyText.maxVisibleCharacters = int.MaxValue;
+        }
+
+        replyTypewriterCoroutine = null;
     }
 
     private void ResizeReplyBubbleToText()
@@ -324,9 +380,16 @@ public class KeyboardInputToggleController : MonoBehaviour
 
     private void HideReplyBubble(bool animate)
     {
+        if (replyTypewriterCoroutine != null)
+        {
+            StopCoroutine(replyTypewriterCoroutine);
+            replyTypewriterCoroutine = null;
+        }
+
         if (replyText != null)
         {
             replyText.text = string.Empty;
+            replyText.maxVisibleCharacters = int.MaxValue;
         }
 
         SetReplyBubbleVisible(false, animate);
