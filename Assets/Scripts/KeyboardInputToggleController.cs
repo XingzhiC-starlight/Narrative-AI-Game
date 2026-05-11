@@ -1,9 +1,9 @@
 using TMPro;
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 
@@ -17,6 +17,8 @@ public class KeyboardInputToggleController : MonoBehaviour
     [Header("Behavior")]
     [SerializeField] private bool placeInputAtTalkButtonOnAwake = true;
     [SerializeField] private bool clearTextWhenOpened = false;
+    [SerializeField] private bool hideInputOnAwake = false;
+    [SerializeField] private bool focusInputOnAwake = true;
 
     [Header("Visual")]
     [SerializeField] private Color inputTextColor = Color.black;
@@ -28,24 +30,31 @@ public class KeyboardInputToggleController : MonoBehaviour
     [SerializeField] private int requestTimeoutSeconds = 30;
     [SerializeField] private string persistSessionIdKey = "yade_chat_session_id";
 
-    [Header("Yade Reply Bubbles")]
-    [SerializeField] private TMP_Text bubble1Text;
-    [SerializeField] private TMP_Text bubble2Text;
-    [SerializeField] private TMP_Text bubble3Text;
-    [SerializeField] private TMP_Text bubble4Text;
-    [SerializeField] private int bubbleCharLimit = 120;
+    [Header("Yade Reply")]
+    [SerializeField] private TMP_Text replyText;
+    [SerializeField] private float minReplyBubbleWidth = 240f;
+    [SerializeField] private float maxReplyBubbleWidth = 800f;
+    [SerializeField] private float replyBubbleHorizontalPadding = 120f;
+    [SerializeField] private float minReplyBubbleHeight = 120f;
+    [SerializeField] private float replyBubbleVerticalPadding = 60f;
     [SerializeField] private float bubbleFadeDuration = 0.2f;
+    [SerializeField] private bool useReplyTypewriter = true;
+    [SerializeField] private float replyTypewriterCharactersPerSecond = 45f;
+    [SerializeField] private float autoHideReplyDelay = 3f;
 
-    private static readonly char[] SentenceEndingChars = { '。', '！', '？', '!', '?' };
-    private static readonly char[] SoftBreakChars = { '，', ',', '；', ';', '、', ' ' };
+    [Header("Chat History")]
+    [SerializeField] private ChatHistoryController chatHistoryController;
 
     private int lastSubmitFrame = -1;
     private bool isSendingRequest;
     private string sessionId;
-    private readonly List<TMP_Text> bubbleTexts = new List<TMP_Text>(4);
-    private readonly List<GameObject> bubbleRoots = new List<GameObject>(4);
-    private readonly List<CanvasGroup> bubbleCanvasGroups = new List<CanvasGroup>(4);
-    private readonly List<Coroutine> bubbleFadeCoroutines = new List<Coroutine>(4);
+    private GameObject replyBubbleRoot;
+    private RectTransform replyBubbleRect;
+    private RectTransform replyTextRect;
+    private CanvasGroup replyBubbleCanvasGroup;
+    private Coroutine replyBubbleFadeCoroutine;
+    private Coroutine replyTypewriterCoroutine;
+    private Coroutine autoHideReplyCoroutine;
 
     [Serializable]
     private class ChatRequestPayload
@@ -63,6 +72,11 @@ public class KeyboardInputToggleController : MonoBehaviour
 
     private void Awake()
     {
+        if (chatHistoryController == null)
+        {
+            chatHistoryController = GetComponent<ChatHistoryController>();
+        }
+
         if (placeInputAtTalkButtonOnAwake)
         {
             MatchInputFieldToTalkButtonRect();
@@ -72,13 +86,17 @@ public class KeyboardInputToggleController : MonoBehaviour
 
         if (keyboardInputField != null)
         {
-            keyboardInputField.gameObject.SetActive(false);
+            keyboardInputField.gameObject.SetActive(!hideInputOnAwake);
+            if (!hideInputOnAwake && focusInputOnAwake)
+            {
+                FocusInputField();
+            }
         }
 
         sessionId = GetOrCreateSessionId();
         Debug.Log($"[KeyboardInputToggleController] Session ID: {sessionId}");
-        RebuildBubbleList();
-        HideAllBubbleRoots();
+        RebuildReplyBubble();
+        HideReplyBubble(false);
     }
 
     private void OnEnable()
@@ -133,6 +151,27 @@ public class KeyboardInputToggleController : MonoBehaviour
         keyboardInputField.ActivateInputField();
     }
 
+    public void FocusInputField()
+    {
+        if (keyboardInputField == null || !keyboardInputField.gameObject.activeInHierarchy)
+        {
+            return;
+        }
+
+        if (!keyboardInputField.interactable)
+        {
+            return;
+        }
+
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(keyboardInputField.gameObject);
+        }
+
+        keyboardInputField.Select();
+        keyboardInputField.ActivateInputField();
+    }
+
     private void OnInputSubmit(string text)
     {
         TrySubmitInput(text);
@@ -163,13 +202,24 @@ public class KeyboardInputToggleController : MonoBehaviour
         lastSubmitFrame = Time.frameCount;
         string trimmedText = text.Trim();
         Debug.Log($"[KeyboardInputToggleController] Submit. User input: {trimmedText}");
-        HideAllBubblesWithFade();
+        if (keyboardInputField != null)
+        {
+            keyboardInputField.SetTextWithoutNotify(string.Empty);
+        }
+
+        HideReplyBubble(true);
+        chatHistoryController?.AddUserMessage(trimmedText);
         StartCoroutine(SendChatRequestCoroutine(trimmedText));
     }
 
     private IEnumerator SendChatRequestCoroutine(string userMessage)
     {
         isSendingRequest = true;
+
+        if (keyboardInputField != null)
+        {
+            keyboardInputField.interactable = false;
+        }
 
         var payload = new ChatRequestPayload
         {
@@ -197,7 +247,8 @@ public class KeyboardInputToggleController : MonoBehaviour
                 if (response != null && !string.IsNullOrWhiteSpace(response.reply))
                 {
                     Debug.Log($"[Yade Reply] {response.reply}");
-                    RenderAssistantReplyToBubbles(response.reply);
+                    RenderAssistantReply(response.reply);
+                    chatHistoryController?.AddCharacterMessage(response.reply);
                 }
                 else
                 {
@@ -215,9 +266,9 @@ public class KeyboardInputToggleController : MonoBehaviour
 
         if (keyboardInputField != null)
         {
+            keyboardInputField.interactable = true;
             keyboardInputField.SetTextWithoutNotify(string.Empty);
-            keyboardInputField.Select();
-            keyboardInputField.ActivateInputField();
+            FocusInputField();
         }
         isSendingRequest = false;
     }
@@ -243,532 +294,213 @@ public class KeyboardInputToggleController : MonoBehaviour
         return created;
     }
 
-    private void RebuildBubbleList()
+    private void RebuildReplyBubble()
     {
-        bubbleTexts.Clear();
-        bubbleTexts.Add(bubble1Text);
-        bubbleTexts.Add(bubble2Text);
-        bubbleTexts.Add(bubble3Text);
-        bubbleTexts.Add(bubble4Text);
+        replyBubbleRoot = null;
+        replyBubbleRect = null;
+        replyTextRect = null;
+        replyBubbleCanvasGroup = null;
 
-        bubbleRoots.Clear();
-        bubbleCanvasGroups.Clear();
-        bubbleFadeCoroutines.Clear();
-        for (int i = 0; i < bubbleTexts.Count; i++)
-        {
-            TMP_Text text = bubbleTexts[i];
-            if (text == null)
-            {
-                bubbleRoots.Add(null);
-                bubbleCanvasGroups.Add(null);
-                bubbleFadeCoroutines.Add(null);
-                continue;
-            }
-
-            // Prefer hiding the parent bubble container; fallback to the text object itself.
-            GameObject root = text.transform.parent != null ? text.transform.parent.gameObject : text.gameObject;
-            bubbleRoots.Add(root);
-
-            CanvasGroup canvasGroup = root.GetComponent<CanvasGroup>();
-            if (canvasGroup == null)
-            {
-                canvasGroup = root.AddComponent<CanvasGroup>();
-            }
-
-            bubbleCanvasGroups.Add(canvasGroup);
-            bubbleFadeCoroutines.Add(null);
-        }
-    }
-
-    private void RenderAssistantReplyToBubbles(string reply)
-    {
-        if (bubbleTexts.Count == 0)
-        {
-            RebuildBubbleList();
-        }
-
-        ClearAllBubbles();
-
-        if (string.IsNullOrEmpty(reply))
+        if (replyText == null)
         {
             return;
         }
 
-        List<string> segments = SplitReplyIntoBubbleSegments(reply, bubbleTexts.Count, Mathf.Max(1, bubbleCharLimit));
-
-        for (int i = 0; i < bubbleTexts.Count; i++)
+        replyBubbleRoot = replyText.transform.parent != null ? replyText.transform.parent.gameObject : replyText.gameObject;
+        replyBubbleRect = replyBubbleRoot.GetComponent<RectTransform>();
+        replyTextRect = replyText.GetComponent<RectTransform>();
+        replyBubbleCanvasGroup = replyBubbleRoot.GetComponent<CanvasGroup>();
+        if (replyBubbleCanvasGroup == null)
         {
-            TMP_Text targetBubble = bubbleTexts[i];
-            if (targetBubble == null)
-            {
-                Debug.LogWarning($"[KeyboardInputToggleController] Bubble {i + 1} text is not assigned.");
-                continue;
-            }
-
-            if (i >= segments.Count)
-            {
-                break;
-            }
-
-            targetBubble.text = segments[i];
-            SetBubbleVisible(i, true, true);
+            replyBubbleCanvasGroup = replyBubbleRoot.AddComponent<CanvasGroup>();
         }
     }
 
-    private List<string> SplitReplyIntoBubbleSegments(string reply, int bubbleCount, int charLimit)
+    private void RenderAssistantReply(string reply)
     {
-        var segments = new List<string>();
-        if (bubbleCount <= 0 || string.IsNullOrWhiteSpace(reply))
+        if (replyText == null)
         {
-            return segments;
+            Debug.LogWarning("[KeyboardInputToggleController] Missing replyText reference.");
+            return;
         }
 
-        List<string> semanticUnits = SplitIntoSemanticUnits(reply, charLimit);
-        if (semanticUnits.Count == 0)
+        if (replyBubbleRoot == null || replyBubbleCanvasGroup == null)
         {
-            return segments;
+            RebuildReplyBubble();
         }
 
-        for (int i = 0; i < semanticUnits.Count; i++)
+        replyText.text = reply.Trim();
+        replyText.maxVisibleCharacters = int.MaxValue;
+        ResizeReplyBubbleToText();
+        SetReplyBubbleVisible(true, true);
+
+        if (useReplyTypewriter && replyTypewriterCharactersPerSecond > 0f)
         {
-            string unit = semanticUnits[i];
-            if (string.IsNullOrWhiteSpace(unit))
+            if (replyTypewriterCoroutine != null)
             {
-                continue;
+                StopCoroutine(replyTypewriterCoroutine);
             }
 
-            if (segments.Count == bubbleCount - 1)
-            {
-                var overflowBuilder = new StringBuilder(unit);
-                for (int j = i + 1; j < semanticUnits.Count; j++)
-                {
-                    if (string.IsNullOrWhiteSpace(semanticUnits[j]))
-                    {
-                        continue;
-                    }
-
-                    AppendSegmentWithSpacing(overflowBuilder, semanticUnits[j]);
-                }
-
-                string overflowText = overflowBuilder.ToString().Trim();
-                if (!string.IsNullOrEmpty(overflowText))
-                {
-                    segments.Add(overflowText);
-                }
-                break;
-            }
-
-            if (segments.Count == 0)
-            {
-                segments.Add(unit);
-                continue;
-            }
-
-            string current = segments[segments.Count - 1];
-            if (ShouldAppendToCurrentSegment(current, unit, charLimit))
-            {
-                var builder = new StringBuilder(current);
-                AppendSegmentWithSpacing(builder, unit);
-                segments[segments.Count - 1] = builder.ToString().Trim();
-            }
-            else
-            {
-                segments.Add(unit);
-            }
+            replyTypewriterCoroutine = StartCoroutine(TypeReplyCoroutine());
         }
-
-        return segments;
+        else
+        {
+            StartAutoHideReplyCountdown();
+        }
     }
 
-    private List<string> SplitIntoSemanticUnits(string reply, int charLimit)
+    private IEnumerator TypeReplyCoroutine()
     {
-        var units = new List<string>();
-        if (string.IsNullOrWhiteSpace(reply))
+        replyText.ForceMeshUpdate();
+        int visibleCharacterCount = replyText.textInfo.characterCount;
+        replyText.maxVisibleCharacters = 0;
+
+        float visibleCharacters = 0f;
+        while (replyText != null && replyText.maxVisibleCharacters < visibleCharacterCount)
         {
-            return units;
+            visibleCharacters += replyTypewriterCharactersPerSecond * Time.deltaTime;
+            replyText.maxVisibleCharacters = Mathf.Min(visibleCharacterCount, Mathf.FloorToInt(visibleCharacters));
+            yield return null;
         }
 
-        string normalizedReply = reply.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
-        if (normalizedReply.Length == 0)
+        if (replyText != null)
         {
-            return units;
+            replyText.maxVisibleCharacters = int.MaxValue;
         }
 
-        string[] paragraphs = normalizedReply.Split(new[] { "\n\n" }, StringSplitOptions.None);
-        for (int paragraphIndex = 0; paragraphIndex < paragraphs.Length; paragraphIndex++)
-        {
-            string paragraph = paragraphs[paragraphIndex].Trim();
-            if (paragraph.Length == 0)
-            {
-                continue;
-            }
-
-            string[] lines = paragraph.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
-            {
-                string line = lines[lineIndex].Trim();
-                if (line.Length == 0)
-                {
-                    continue;
-                }
-
-                List<string> sentenceUnits = SplitLineBySentenceBoundaries(line);
-                for (int sentenceIndex = 0; sentenceIndex < sentenceUnits.Count; sentenceIndex++)
-                {
-                    AddUnitWithOptionalNewline(
-                        units,
-                        sentenceUnits[sentenceIndex],
-                        lineIndex > 0 && sentenceIndex == 0,
-                        paragraphIndex > 0 && lineIndex == 0 && sentenceIndex == 0,
-                        charLimit);
-                }
-            }
-        }
-
-        return units;
+        replyTypewriterCoroutine = null;
+        StartAutoHideReplyCountdown();
     }
 
-    private List<string> SplitLineBySentenceBoundaries(string line)
+    private void ResizeReplyBubbleToText()
     {
-        var units = new List<string>();
-        if (string.IsNullOrWhiteSpace(line))
-        {
-            return units;
-        }
-
-        var sentenceBuilder = new StringBuilder();
-        for (int i = 0; i < line.Length; i++)
-        {
-            char currentChar = line[i];
-            sentenceBuilder.Append(currentChar);
-
-            if (currentChar == '…')
-            {
-                if (i + 1 < line.Length && line[i + 1] == '…')
-                {
-                    continue;
-                }
-
-                AddTrimmedUnit(units, sentenceBuilder.ToString());
-                sentenceBuilder.Length = 0;
-                continue;
-            }
-
-            if (!IsSentenceEndingChar(currentChar))
-            {
-                continue;
-            }
-
-            while (i + 1 < line.Length)
-            {
-                char nextChar = line[i + 1];
-                if (!IsClosingPunctuation(nextChar))
-                {
-                    break;
-                }
-
-                sentenceBuilder.Append(nextChar);
-                i++;
-            }
-
-            AddTrimmedUnit(units, sentenceBuilder.ToString());
-            sentenceBuilder.Length = 0;
-        }
-
-        AddTrimmedUnit(units, sentenceBuilder.ToString());
-        return units;
-    }
-
-    private void AddUnitWithOptionalNewline(List<string> units, string rawUnit, bool forceSingleNewlineBefore, bool forceParagraphBreakBefore, int charLimit)
-    {
-        if (string.IsNullOrWhiteSpace(rawUnit))
+        if (replyText == null || replyBubbleRect == null || replyTextRect == null)
         {
             return;
         }
 
-        string unit = rawUnit.Trim();
-        List<string> splitUnits = SplitOverlongUnit(unit, charLimit);
-        for (int i = 0; i < splitUnits.Count; i++)
+        Canvas.ForceUpdateCanvases();
+
+        Vector2 unwrappedPreferredSize = replyText.GetPreferredValues(replyText.text, 100000f, 0f);
+        float targetWidth = Mathf.Clamp(
+            unwrappedPreferredSize.x + replyBubbleHorizontalPadding,
+            minReplyBubbleWidth,
+            maxReplyBubbleWidth);
+        replyBubbleRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, targetWidth);
+        Canvas.ForceUpdateCanvases();
+
+        float fixedTextWidth = replyTextRect.rect.width;
+        if (fixedTextWidth <= 0f)
         {
-            string piece = splitUnits[i];
-            if (piece.Length == 0)
-            {
-                continue;
-            }
-
-            if (i == 0)
-            {
-                if (forceParagraphBreakBefore)
-                {
-                    piece = "\n\n" + piece;
-                }
-                else if (forceSingleNewlineBefore)
-                {
-                    piece = "\n" + piece;
-                }
-            }
-
-            units.Add(piece);
+            fixedTextWidth = Mathf.Max(1f, targetWidth - replyBubbleHorizontalPadding);
         }
+
+        Vector2 preferredSize = replyText.GetPreferredValues(replyText.text, fixedTextWidth, 0f);
+        float targetHeight = Mathf.Max(minReplyBubbleHeight, preferredSize.y + replyBubbleVerticalPadding);
+        replyBubbleRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
     }
 
-    private List<string> SplitOverlongUnit(string unit, int charLimit)
+    private void HideReplyBubble(bool animate)
     {
-        var segments = new List<string>();
-        if (string.IsNullOrWhiteSpace(unit))
+        if (autoHideReplyCoroutine != null)
         {
-            return segments;
+            StopCoroutine(autoHideReplyCoroutine);
+            autoHideReplyCoroutine = null;
         }
 
-        string remaining = unit.Trim();
-        while (remaining.Length > charLimit)
+        if (replyTypewriterCoroutine != null)
         {
-            int splitIndex = FindLastBreakIndex(remaining, charLimit, SoftBreakChars);
-            if (splitIndex <= 0)
-            {
-                splitIndex = charLimit;
-            }
-
-            string chunk = remaining.Substring(0, splitIndex).Trim();
-            if (chunk.Length == 0)
-            {
-                splitIndex = Mathf.Min(charLimit, remaining.Length);
-                chunk = remaining.Substring(0, splitIndex).Trim();
-            }
-
-            if (chunk.Length == 0)
-            {
-                break;
-            }
-
-            segments.Add(chunk);
-            remaining = remaining.Substring(splitIndex).TrimStart();
+            StopCoroutine(replyTypewriterCoroutine);
+            replyTypewriterCoroutine = null;
         }
 
-        if (remaining.Length > 0)
+        if (replyText != null)
         {
-            segments.Add(remaining);
+            replyText.text = string.Empty;
+            replyText.maxVisibleCharacters = int.MaxValue;
         }
 
-        return segments;
+        SetReplyBubbleVisible(false, animate);
     }
 
-    private int FindLastBreakIndex(string value, int maxIndexExclusive, char[] breakChars)
+    private void StartAutoHideReplyCountdown()
     {
-        int searchLength = Mathf.Min(maxIndexExclusive, value.Length);
-        for (int i = searchLength - 1; i >= 0; i--)
+        if (autoHideReplyCoroutine != null)
         {
-            if (Array.IndexOf(breakChars, value[i]) >= 0)
-            {
-                return i + 1;
-            }
+            StopCoroutine(autoHideReplyCoroutine);
+            autoHideReplyCoroutine = null;
         }
 
-        return -1;
-    }
-
-    private bool ShouldAppendToCurrentSegment(string current, string next, int charLimit)
-    {
-        if (string.IsNullOrEmpty(current) || string.IsNullOrWhiteSpace(next))
-        {
-            return false;
-        }
-
-        bool hasParagraphBreak = next.StartsWith("\n\n", StringComparison.Ordinal);
-        if (hasParagraphBreak)
-        {
-            return false;
-        }
-
-        int combinedLength = current.Length + GetJoiner(current, next).Length + next.TrimStart('\n').Length;
-        if (combinedLength <= charLimit)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private void AppendSegmentWithSpacing(StringBuilder builder, string next)
-    {
-        if (builder == null || string.IsNullOrWhiteSpace(next))
+        if (autoHideReplyDelay < 0f)
         {
             return;
         }
 
-        builder.Append(GetJoiner(builder.ToString(), next));
-        builder.Append(next.TrimStart('\n'));
+        autoHideReplyCoroutine = StartCoroutine(AutoHideReplyCoroutine());
     }
 
-    private string GetJoiner(string current, string next)
+    private IEnumerator AutoHideReplyCoroutine()
     {
-        if (string.IsNullOrEmpty(current))
+        if (autoHideReplyDelay > 0f)
         {
-            return string.Empty;
+            yield return new WaitForSeconds(autoHideReplyDelay);
         }
 
-        if (next.StartsWith("\n\n", StringComparison.Ordinal))
-        {
-            return "\n\n";
-        }
-
-        if (next.StartsWith("\n", StringComparison.Ordinal))
-        {
-            return "\n";
-        }
-
-        return string.Empty;
+        autoHideReplyCoroutine = null;
+        HideReplyBubble(true);
     }
 
-    private void AddTrimmedUnit(List<string> units, string value)
+    private void SetReplyBubbleVisible(bool visible, bool animate)
     {
-        if (units == null || string.IsNullOrWhiteSpace(value))
+        if (replyBubbleRoot == null)
         {
             return;
         }
 
-        string trimmed = value.Trim();
-        if (!string.IsNullOrEmpty(trimmed))
+        if (!animate || bubbleFadeDuration <= 0f || replyBubbleCanvasGroup == null)
         {
-            units.Add(trimmed);
-        }
-    }
-
-    private bool IsSentenceEndingChar(char value)
-    {
-        return Array.IndexOf(SentenceEndingChars, value) >= 0;
-    }
-
-    private bool IsClosingPunctuation(char value)
-    {
-        switch (value)
-        {
-            case '"':
-            case '\'':
-            case '”':
-            case '’':
-            case ')':
-            case '）':
-            case ']':
-            case '】':
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private void ClearAllBubbles()
-    {
-        for (int i = 0; i < bubbleTexts.Count; i++)
-        {
-            if (bubbleTexts[i] != null)
+            if (replyBubbleFadeCoroutine != null)
             {
-                bubbleTexts[i].text = string.Empty;
+                StopCoroutine(replyBubbleFadeCoroutine);
+                replyBubbleFadeCoroutine = null;
             }
 
-            SetBubbleVisible(i, false, false);
-        }
-    }
-
-    private void HideAllBubbleRoots()
-    {
-        for (int i = 0; i < bubbleRoots.Count; i++)
-        {
-            SetBubbleVisible(i, false, false);
-        }
-    }
-
-    private void HideAllBubblesWithFade()
-    {
-        for (int i = 0; i < bubbleRoots.Count; i++)
-        {
-            SetBubbleVisible(i, false, true);
-        }
-    }
-
-    private void SetBubbleVisible(int index, bool visible, bool animate)
-    {
-        if (index < 0 || index >= bubbleRoots.Count)
-        {
+            replyBubbleRoot.SetActive(visible);
+            if (replyBubbleCanvasGroup != null)
+            {
+                replyBubbleCanvasGroup.alpha = visible ? 1f : 0f;
+            }
             return;
         }
 
-        GameObject root = bubbleRoots[index];
-        if (root != null)
+        if (replyBubbleFadeCoroutine != null)
         {
-            if (!animate || bubbleFadeDuration <= 0f)
-            {
-                if (bubbleFadeCoroutines[index] != null)
-                {
-                    StopCoroutine(bubbleFadeCoroutines[index]);
-                    bubbleFadeCoroutines[index] = null;
-                }
-
-                if (visible)
-                {
-                    root.SetActive(true);
-                    if (bubbleCanvasGroups[index] != null)
-                    {
-                        bubbleCanvasGroups[index].alpha = 1f;
-                    }
-                }
-                else
-                {
-                    if (bubbleCanvasGroups[index] != null)
-                    {
-                        bubbleCanvasGroups[index].alpha = 0f;
-                    }
-                    root.SetActive(false);
-                }
-                return;
-            }
-
-            if (bubbleFadeCoroutines[index] != null)
-            {
-                StopCoroutine(bubbleFadeCoroutines[index]);
-                bubbleFadeCoroutines[index] = null;
-            }
-
-            CanvasGroup canvasGroup = bubbleCanvasGroups[index];
-            if (visible)
-            {
-                root.SetActive(true);
-                if (canvasGroup != null)
-                {
-                    canvasGroup.alpha = 0f;
-                }
-            }
-
-            bubbleFadeCoroutines[index] = StartCoroutine(FadeBubbleCoroutine(index, visible));
-        }
-    }
-
-    private IEnumerator FadeBubbleCoroutine(int index, bool visible)
-    {
-        if (index < 0 || index >= bubbleRoots.Count)
-        {
-            yield break;
-        }
-
-        GameObject root = bubbleRoots[index];
-        CanvasGroup canvasGroup = bubbleCanvasGroups[index];
-
-        if (root == null || canvasGroup == null)
-        {
-            yield break;
+            StopCoroutine(replyBubbleFadeCoroutine);
+            replyBubbleFadeCoroutine = null;
         }
 
         if (visible)
         {
-            root.SetActive(true);
+            replyBubbleRoot.SetActive(true);
+            replyBubbleCanvasGroup.alpha = 0f;
         }
-        else if (!root.activeSelf)
+        else if (!replyBubbleRoot.activeSelf)
         {
-            bubbleFadeCoroutines[index] = null;
+            replyBubbleCanvasGroup.alpha = 0f;
+            return;
+        }
+
+        replyBubbleFadeCoroutine = StartCoroutine(FadeReplyBubbleCoroutine(visible));
+    }
+
+    private IEnumerator FadeReplyBubbleCoroutine(bool visible)
+    {
+        if (replyBubbleRoot == null || replyBubbleCanvasGroup == null)
+        {
             yield break;
         }
 
-        float startAlpha = visible ? 0f : canvasGroup.alpha;
+        float startAlpha = visible ? 0f : replyBubbleCanvasGroup.alpha;
         float endAlpha = visible ? 1f : 0f;
         float elapsed = 0f;
         float duration = Mathf.Max(0.01f, bubbleFadeDuration);
@@ -777,17 +509,17 @@ public class KeyboardInputToggleController : MonoBehaviour
         {
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
-            canvasGroup.alpha = Mathf.Lerp(startAlpha, endAlpha, t);
+            replyBubbleCanvasGroup.alpha = Mathf.Lerp(startAlpha, endAlpha, t);
             yield return null;
         }
 
-        canvasGroup.alpha = endAlpha;
+        replyBubbleCanvasGroup.alpha = endAlpha;
         if (!visible)
         {
-            root.SetActive(false);
+            replyBubbleRoot.SetActive(false);
         }
 
-        bubbleFadeCoroutines[index] = null;
+        replyBubbleFadeCoroutine = null;
     }
 
     private void MatchInputFieldToTalkButtonRect()
