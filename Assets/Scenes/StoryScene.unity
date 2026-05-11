@@ -1117,7 +1117,7 @@ MonoBehaviour:
       m_Calls: []
   m_Sprite: {fileID: -6597906815505359156, guid: eb99483e6b5694e87a80f2cd865e3258, type: 3}
   m_Type: 0
-  m_PreserveAspect: 1
+  m_PreserveAspect: 0
   m_FillCenter: 1
   m_FillMethod: 4
   m_FillAmount: 1
@@ -1239,6 +1239,11 @@ MonoBehaviour:
   requestTimeoutSeconds: 30
   persistSessionIdKey: yade_chat_session_id
   replyText: {fileID: 1884312078}
+  minReplyBubbleWidth: 240
+  maxReplyBubbleWidth: 800
+  replyBubbleHorizontalPadding: 120
+  minReplyBubbleHeight: 120
+  replyBubbleVerticalPadding: 60
   bubbleFadeDuration: 0.2
 --- !u!225 &835655682
 CanvasGroup:

@@ -31,12 +31,19 @@ public class KeyboardInputToggleController : MonoBehaviour
 
     [Header("Yade Reply")]
     [SerializeField] private TMP_Text replyText;
+    [SerializeField] private float minReplyBubbleWidth = 240f;
+    [SerializeField] private float maxReplyBubbleWidth = 800f;
+    [SerializeField] private float replyBubbleHorizontalPadding = 120f;
+    [SerializeField] private float minReplyBubbleHeight = 120f;
+    [SerializeField] private float replyBubbleVerticalPadding = 60f;
     [SerializeField] private float bubbleFadeDuration = 0.2f;
 
     private int lastSubmitFrame = -1;
     private bool isSendingRequest;
     private string sessionId;
     private GameObject replyBubbleRoot;
+    private RectTransform replyBubbleRect;
+    private RectTransform replyTextRect;
     private CanvasGroup replyBubbleCanvasGroup;
     private Coroutine replyBubbleFadeCoroutine;
 
@@ -250,6 +257,8 @@ public class KeyboardInputToggleController : MonoBehaviour
     private void RebuildReplyBubble()
     {
         replyBubbleRoot = null;
+        replyBubbleRect = null;
+        replyTextRect = null;
         replyBubbleCanvasGroup = null;
 
         if (replyText == null)
@@ -258,6 +267,8 @@ public class KeyboardInputToggleController : MonoBehaviour
         }
 
         replyBubbleRoot = replyText.transform.parent != null ? replyText.transform.parent.gameObject : replyText.gameObject;
+        replyBubbleRect = replyBubbleRoot.GetComponent<RectTransform>();
+        replyTextRect = replyText.GetComponent<RectTransform>();
         replyBubbleCanvasGroup = replyBubbleRoot.GetComponent<CanvasGroup>();
         if (replyBubbleCanvasGroup == null)
         {
@@ -279,7 +290,36 @@ public class KeyboardInputToggleController : MonoBehaviour
         }
 
         replyText.text = reply.Trim();
+        ResizeReplyBubbleToText();
         SetReplyBubbleVisible(true, true);
+    }
+
+    private void ResizeReplyBubbleToText()
+    {
+        if (replyText == null || replyBubbleRect == null || replyTextRect == null)
+        {
+            return;
+        }
+
+        Canvas.ForceUpdateCanvases();
+
+        Vector2 unwrappedPreferredSize = replyText.GetPreferredValues(replyText.text, 100000f, 0f);
+        float targetWidth = Mathf.Clamp(
+            unwrappedPreferredSize.x + replyBubbleHorizontalPadding,
+            minReplyBubbleWidth,
+            maxReplyBubbleWidth);
+        replyBubbleRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, targetWidth);
+        Canvas.ForceUpdateCanvases();
+
+        float fixedTextWidth = replyTextRect.rect.width;
+        if (fixedTextWidth <= 0f)
+        {
+            fixedTextWidth = Mathf.Max(1f, targetWidth - replyBubbleHorizontalPadding);
+        }
+
+        Vector2 preferredSize = replyText.GetPreferredValues(replyText.text, fixedTextWidth, 0f);
+        float targetHeight = Mathf.Max(minReplyBubbleHeight, preferredSize.y + replyBubbleVerticalPadding);
+        replyBubbleRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, targetHeight);
     }
 
     private void HideReplyBubble(bool animate)
