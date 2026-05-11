@@ -11,7 +11,6 @@ position: -600,-200
 <<declare $scene4_choice4 = "">>
 <<declare $scene5_choice1 = "">>
 <<bgm play 温暖的伊丽斯 0.5 1>>
-<<chat_wait>>
 <<jump prologue_1>>
 ===
 
@@ -583,4 +582,5 @@ position: 9900,-200
 
 <<bgm stop 0.5>>
 剧情1完结
+<<chat_wait>>
 ===
