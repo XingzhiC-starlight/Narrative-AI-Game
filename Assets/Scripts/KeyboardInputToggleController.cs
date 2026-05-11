@@ -40,6 +40,10 @@ public class KeyboardInputToggleController : MonoBehaviour
     [SerializeField] private float bubbleFadeDuration = 0.2f;
     [SerializeField] private bool useReplyTypewriter = true;
     [SerializeField] private float replyTypewriterCharactersPerSecond = 45f;
+    [SerializeField] private float autoHideReplyDelay = 3f;
+
+    [Header("Chat History")]
+    [SerializeField] private ChatHistoryController chatHistoryController;
 
     private int lastSubmitFrame = -1;
     private bool isSendingRequest;
@@ -50,6 +54,7 @@ public class KeyboardInputToggleController : MonoBehaviour
     private CanvasGroup replyBubbleCanvasGroup;
     private Coroutine replyBubbleFadeCoroutine;
     private Coroutine replyTypewriterCoroutine;
+    private Coroutine autoHideReplyCoroutine;
 
     [Serializable]
     private class ChatRequestPayload
@@ -67,6 +72,11 @@ public class KeyboardInputToggleController : MonoBehaviour
 
     private void Awake()
     {
+        if (chatHistoryController == null)
+        {
+            chatHistoryController = GetComponent<ChatHistoryController>();
+        }
+
         if (placeInputAtTalkButtonOnAwake)
         {
             MatchInputFieldToTalkButtonRect();
@@ -192,7 +202,13 @@ public class KeyboardInputToggleController : MonoBehaviour
         lastSubmitFrame = Time.frameCount;
         string trimmedText = text.Trim();
         Debug.Log($"[KeyboardInputToggleController] Submit. User input: {trimmedText}");
+        if (keyboardInputField != null)
+        {
+            keyboardInputField.SetTextWithoutNotify(string.Empty);
+        }
+
         HideReplyBubble(true);
+        chatHistoryController?.AddUserMessage(trimmedText);
         StartCoroutine(SendChatRequestCoroutine(trimmedText));
     }
 
@@ -232,6 +248,7 @@ public class KeyboardInputToggleController : MonoBehaviour
                 {
                     Debug.Log($"[Yade Reply] {response.reply}");
                     RenderAssistantReply(response.reply);
+                    chatHistoryController?.AddCharacterMessage(response.reply);
                 }
                 else
                 {
@@ -326,6 +343,10 @@ public class KeyboardInputToggleController : MonoBehaviour
 
             replyTypewriterCoroutine = StartCoroutine(TypeReplyCoroutine());
         }
+        else
+        {
+            StartAutoHideReplyCountdown();
+        }
     }
 
     private IEnumerator TypeReplyCoroutine()
@@ -348,6 +369,7 @@ public class KeyboardInputToggleController : MonoBehaviour
         }
 
         replyTypewriterCoroutine = null;
+        StartAutoHideReplyCountdown();
     }
 
     private void ResizeReplyBubbleToText()
@@ -380,6 +402,12 @@ public class KeyboardInputToggleController : MonoBehaviour
 
     private void HideReplyBubble(bool animate)
     {
+        if (autoHideReplyCoroutine != null)
+        {
+            StopCoroutine(autoHideReplyCoroutine);
+            autoHideReplyCoroutine = null;
+        }
+
         if (replyTypewriterCoroutine != null)
         {
             StopCoroutine(replyTypewriterCoroutine);
@@ -393,6 +421,33 @@ public class KeyboardInputToggleController : MonoBehaviour
         }
 
         SetReplyBubbleVisible(false, animate);
+    }
+
+    private void StartAutoHideReplyCountdown()
+    {
+        if (autoHideReplyCoroutine != null)
+        {
+            StopCoroutine(autoHideReplyCoroutine);
+            autoHideReplyCoroutine = null;
+        }
+
+        if (autoHideReplyDelay < 0f)
+        {
+            return;
+        }
+
+        autoHideReplyCoroutine = StartCoroutine(AutoHideReplyCoroutine());
+    }
+
+    private IEnumerator AutoHideReplyCoroutine()
+    {
+        if (autoHideReplyDelay > 0f)
+        {
+            yield return new WaitForSeconds(autoHideReplyDelay);
+        }
+
+        autoHideReplyCoroutine = null;
+        HideReplyBubble(true);
     }
 
     private void SetReplyBubbleVisible(bool visible, bool animate)
