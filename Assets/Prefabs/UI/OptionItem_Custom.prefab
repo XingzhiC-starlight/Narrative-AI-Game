@@ -74,8 +74,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4286611584
-  m_fontColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+    rgba: 4289183950
+  m_fontColor: {r: 0.80784315, g: 0.7529412, b: 0.654902, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -202,7 +202,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -3813037241743516495, guid: 523dafb8f97524336bc8a0f3b6a8ee43, type: 3}
+  m_Sprite: {fileID: -6917932771786048414, guid: 71a7fceffff7c4e7d96db1ad9f192f0e, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -379,15 +379,15 @@ MonoBehaviour:
   m_Interactable: 1
   m_TargetGraphic: {fileID: 5197975715366943000}
   text: {fileID: 586720242071694047}
-  selectionImage: {fileID: 0}
+  selectionImage: {fileID: 4990799869849078087}
   normal:
-    sprite: {fileID: 0}
-    colour: {r: 0, g: 0, b: 0, a: 1}
+    sprite: {fileID: -6917932771786048414, guid: 71a7fceffff7c4e7d96db1ad9f192f0e, type: 3}
+    colour: {r: 0.80784315, g: 0.7529412, b: 0.654902, a: 1}
   selected:
-    sprite: {fileID: 21300000, guid: 997a4571b48144fd7be9c547b769c11d, type: 3}
-    colour: {r: 0, g: 0, b: 0, a: 1}
+    sprite: {fileID: 7598115124301807383, guid: 18015759345cc45a0b1e40ad2ca23a04, type: 3}
+    colour: {r: 0.80784315, g: 0.7529412, b: 0.654902, a: 1}
   disabled:
-    sprite: {fileID: 0}
+    sprite: {fileID: -6917932771786048414, guid: 71a7fceffff7c4e7d96db1ad9f192f0e, type: 3}
     colour: {r: 0.5, g: 0.5, b: 0.5, a: 0.5019608}
   disabledStrikeThrough: 1
 --- !u!114 &7549841420730570746
@@ -479,7 +479,7 @@ MonoBehaviour:
   m_margin: {x: 60, y: 0, z: 20, w: 0}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
-  m_hasFontAssetChanged: 1
+  m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
 --- !u!114 &4660037422195995478
