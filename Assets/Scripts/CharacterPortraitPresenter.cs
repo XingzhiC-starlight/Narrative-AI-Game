@@ -189,6 +189,13 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
             }
         }
 
+        if (ShouldTransitionSinglePortraitToRight(requestedNames))
+        {
+            await TransitionSinglePortraitToRightAsync(requestedNames);
+            SetLineHighlight(lastKnownSpeakerName);
+            return;
+        }
+
         currentPortraitNames.Clear();
         currentPortraitNames.AddRange(requestedNames);
         ResetSlotScales();
@@ -196,6 +203,59 @@ public class CharacterPortraitPresenter : DialoguePresenterBase
 
         await ApplyDisplayStateAsync();
         SetLineHighlight(lastKnownSpeakerName);
+    }
+
+    private bool ShouldTransitionSinglePortraitToRight(List<string> requestedNames)
+    {
+        return currentPortraitNames.Count == 1
+            && requestedNames.Count == 2
+            && portraitSlots.Count >= 2
+            && portraitSlots[0].portraitImage != null
+            && portraitSlots[1].portraitImage != null
+            && string.Equals(currentPortraitNames[0], requestedNames[1], StringComparison.Ordinal);
+    }
+
+    private async YarnTask TransitionSinglePortraitToRightAsync(List<string> requestedNames)
+    {
+        Image leftImage = portraitSlots[0].portraitImage;
+        Image rightImage = portraitSlots[1].portraitImage;
+        if (leftImage == null || rightImage == null)
+        {
+            return;
+        }
+
+        if (portraitContainer != null)
+        {
+            portraitContainer.SetActive(true);
+        }
+
+        currentPortraitNames.Clear();
+        currentPortraitNames.AddRange(requestedNames);
+        ResetSlotScales();
+        ApplyDefaultScalesToCurrentPortraits();
+
+        RestoreLayout(leftImage.rectTransform);
+        leftImage.sprite = LoadPortraitSprite(requestedNames[0]);
+        ApplyPortraitScale(leftImage.rectTransform, 0);
+        leftImage.gameObject.SetActive(true);
+        CanvasGroup leftCanvasGroup = EnsureCanvasGroup(leftImage);
+        leftCanvasGroup.alpha = 0f;
+
+        RestoreLayout(rightImage.rectTransform);
+        rightImage.sprite = LoadPortraitSprite(requestedNames[1]);
+        ApplyPortraitScale(rightImage.rectTransform, 1);
+        CanvasGroup rightCanvasGroup = EnsureCanvasGroup(rightImage);
+        rightCanvasGroup.alpha = 1f;
+        rightImage.gameObject.SetActive(true);
+
+        float duration = Mathf.Max(0f, fadeDuration);
+        if (duration <= 0f)
+        {
+            leftCanvasGroup.alpha = 1f;
+            return;
+        }
+
+        await Effects.FadeAlphaAsync(leftCanvasGroup, 0f, 1f, duration, CancellationToken.None);
     }
 
     private async YarnTask SetPortraitScaleCommandAsync(params string[] parameters)
